@@ -7,49 +7,49 @@ import { TaskForm } from "./TaskForm";
 import { LoginForm } from "./LoginForm";
 
 const toggleChecked = ({ _id, isChecked }) => {
-  TasksCollection.update(_id, {
-    $set: {
-      isChecked: !isChecked,
-    },
-  });
+  Meteor.call("tasks.setIsChecked", _id, !isChecked);
 };
 
-const deleteTask = ({ _id }) => TasksCollection.remove(_id);
+const deleteTask = ({ _id }) => {
+  return Meteor.call("tasks.remove", _id);
+};
 
 const App = () => {
+  const [hideCompleted, setHideCompleted] = useState(false);
+
   const user = useTracker(() => Meteor.user());
   const logout = () => Meteor.logout();
 
   const userFilter = user ? { userId: user._id } : {};
-  // kullanicilarin kendi ekledikleri tasklari gorebilmesi icin
-
-  const [hideCompleted, setHideCompleted] = useState(false);
+  // kullanici filtresi, eger kullanici var ise true'daki sorguyu alir.
   const hideCompletedFilter = { isChecked: { $ne: true } };
-
+  // isChecked'i false olanlari geri sorgusu
   const pendingOnlyFilter = { ...hideCompletedFilter, ...userFilter };
-  // yazdigimiz 2 ayri sorguyu spread ile tek bir yerde topladik.
+  // hem kullanici girisi olmus hemde hide butonuna basildigi durumda
+  const noDataAvailable = { tasks: [], pendingTasksCount: 0 };
+  // verinin olmadigi durumu gosteriyoruz
 
-  const tasks = useTracker(() => {
-    if (!user) return [];
+  const { tasks, pendingTasksCount, isLoading } = useTracker(() => {
+    if (!Meteor.user()) return noDataAvailable;
+    // eger user yoksa calisir
 
-    return TasksCollection.find(
-      hideCompleted ? pendingOnlyFilter : userFilter,
-      {
-        sort: { createdAt: -1 },
-      }
+    const handler = Meteor.subscribe("tasks");
+
+    if (!handler.ready()) return { ...noDataAvailable, isLoading: true };
+    // subscribe ile alinan data hazir degilse data yok ve loading goster
+
+    const tasks = TasksCollection.find(
+      hideCompleted ? pendingOnlyFilter : userFilter
     ).fetch();
-  });
-  const pendingTasksCount = useTracker(() => {
-    if (!user) return [];
 
-    return TasksCollection.find(pendingOnlyFilter).count();
+    const pendingTasksCount = TasksCollection.find(pendingOnlyFilter).count();
+
+    return { tasks, pendingTasksCount };
   });
-  // NOTE useTracker database ile arada bir fark oldugu zaman calisan hooks'tur.
 
   const pendingTasksTitle = `${
     pendingTasksCount ? ` (${pendingTasksCount})` : " yok "
   }`;
-  // NOTE pendingTasksCount sorgusu tamamlandimi pendingTasksCount'u goster onun disinda bu '' gozuksun
 
   return (
     <>
@@ -70,6 +70,8 @@ const App = () => {
               {hideCompleted ? "Show All" : "Hide Completed"}
             </button>
           </div>
+
+          {isLoading && <div className="loading">loading...</div>}
 
           <h3>Todo-App </h3>
           <TaskForm user={user} />
